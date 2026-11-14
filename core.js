@@ -524,7 +524,7 @@ function think(G, w) {
 function spawnBanana(G) {
   if (!G.bananas) G.bananas = [];
   var R = G.rng, d = Math.sqrt(R()) * (ARENA * 0.82), t = R() * TAU;
-  var b = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 24 };
+  var b = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 48 };
   G.bananas.push(b);
   if (G.bananas.length > 3) G.bananas.shift();
   pushEv(G, { t: 'banana_spawn', x: b.x, y: b.y });
@@ -554,7 +554,7 @@ function useBanana(G, worm) {
 function spawnAppleJelly(G) {
   if (!G.appleJellies) G.appleJellies = [];
   var R = G.rng, d = Math.sqrt(R()) * (ARENA * 0.82), t = R() * TAU;
-  var j = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 22 };
+  var j = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 44 };
   G.appleJellies.push(j);
   if (G.appleJellies.length > 3) G.appleJellies.shift();
   pushEv(G, { t: 'jelly_spawn', x: j.x, y: j.y });
@@ -575,7 +575,7 @@ function useAppleJelly(G, worm) {
 function spawnDurian(G) {
   if (!G.durians) G.durians = [];
   var R = G.rng, d = Math.sqrt(R()) * (ARENA * 0.82), t = R() * TAU;
-  var dr = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 24 };
+  var dr = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 48 };
   G.durians.push(dr);
   if (G.durians.length > 3) G.durians.shift();
   pushEv(G, { t: 'durian_spawn', x: dr.x, y: dr.y });
