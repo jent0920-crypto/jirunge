@@ -1,0 +1,12 @@
+# graft local cache
+/graft/
+
+# agent & editor configs
+.gemini/
+.claude/
+.mcp.json
+.ignore
+
+# node dependencies
+node_modules/
+package-lock.json
