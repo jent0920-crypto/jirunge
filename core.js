@@ -120,6 +120,12 @@ var NAMES = ['꿈틀대장', '국수가닥', '미역줄기', '라면사리', '�
   '흙냄새좋아', '모퉁이매복', '꼬리조심', '빙글빙글', '숨바꼭질', '배부른척', '간식도둑', '멸치볶음', '김밥꼬다리', '소시지빵'];
 var TYPES = ['forager', 'hunter', 'coward'];
 
+function pushEv(G, ev) {
+  G.ev.push(ev);
+  if (!G.netEv) G.netEv = [];
+  G.netEv.push(ev);
+}
+
 /* ── 게임 만들기 ── */
 function newGame(opt) {
   opt = opt || {};
@@ -133,7 +139,7 @@ function newGame(opt) {
     oc: new Uint8Array(ORB_CAP), ok: new Uint8Array(ORB_CAP), oa: new Uint8Array(ORB_CAP), ofree: new Int32Array(ORB_CAP), ofn: 0, nat: 0, orbs: 0,
     ogHead: new Int32Array(OGN * OGN), ogNext: new Int32Array(ORB_CAP),
     gHead: new Int32Array(GN * GN), gNext: new Int32Array(16384), gW: new Int32Array(16384), gX: new Float32Array(16384), gY: new Float32Array(16384), gR: new Float32Array(16384), gN: 0,
-    byId: {}, ev: [], stats: { deaths: [], spawns: 0 }, lastSpawn: -999, usedNames: {},
+    byId: {}, ev: [], netEv: [], stats: { deaths: [], spawns: 0 }, lastSpawn: -999, usedNames: {},
     bananas: [], appleJellies: [], durians: []
   };
   for (var i = ORB_CAP - 1; i >= 0; i--) G.ofree[G.ofn++] = i;
@@ -335,7 +341,7 @@ function eat(G, w) {
       else if (d2 < S * S) { G.ox[i] += dx * 0.24; G.oy[i] += dy * 0.24; }
     }
   }
-  if (got > 0) { grow(w, got); if (w === G.player) G.ev.push({ t: 'eat', v: got }); }
+  if (got > 0) { grow(w, got); if (w === G.player || w.isGuest) pushEv(G, { t: 'eat', v: got, id: w.id }); }
 }
 
 /* ── 죽음 ── */
@@ -355,7 +361,7 @@ function kill(G, w, killer, cause) {
   cx /= k; cy /= k;
   if (killer) killer.kills++;
   G.stats.deaths.push({ id: w.id, type: w.ai ? w.ai.type : 'player', life: (G.tick - w.born) * STEP, m: w.maxM, cause: cause, by: killer ? killer.id : 0 });
-  G.ev.push({ t: 'die', id: w.id, name: w.name, m: w.m, x: cx, y: cy, by: killer ? killer.id : 0, byName: killer ? killer.name : '', player: w === G.player, byPlayer: !!(killer && killer === G.player), cause: cause });
+  pushEv(G, { t: 'die', id: w.id, name: w.name, m: w.m, x: cx, y: cy, by: killer ? killer.id : 0, byName: killer ? killer.name : '', player: w === G.player, byPlayer: !!(killer && killer === G.player), cause: cause });
   /* 근처 컴퓨터 지렁이는 잔치 자리로 몰려간다 */
   if (w.m > 70) {
     for (var q = 0; q < G.worms.length; q++) {
@@ -521,7 +527,7 @@ function spawnBanana(G) {
   var b = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 24 };
   G.bananas.push(b);
   if (G.bananas.length > 3) G.bananas.shift();
-  G.ev.push({ t: 'banana_spawn', x: b.x, y: b.y });
+  pushEv(G, { t: 'banana_spawn', x: b.x, y: b.y });
   return b;
 }
 
@@ -540,7 +546,7 @@ function useBanana(G, worm) {
       affected++;
     }
   }
-  G.ev.push({ t: 'banana_use', x: p.x, y: p.y, r: 800, affected: affected });
+  pushEv(G, { t: 'banana_use', x: p.x, y: p.y, r: 800, affected: affected });
   return true;
 }
 
@@ -551,7 +557,7 @@ function spawnAppleJelly(G) {
   var j = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 22 };
   G.appleJellies.push(j);
   if (G.appleJellies.length > 3) G.appleJellies.shift();
-  G.ev.push({ t: 'jelly_spawn', x: j.x, y: j.y });
+  pushEv(G, { t: 'jelly_spawn', x: j.x, y: j.y });
   return j;
 }
 
@@ -561,7 +567,7 @@ function useAppleJelly(G, worm) {
   p.appleJellies--;
   p.jumpTimer = 1.0;
   p.landImmune = 0;
-  G.ev.push({ t: 'jelly_jump', x: p.x, y: p.y });
+  pushEv(G, { t: 'jelly_jump', x: p.x, y: p.y });
   return true;
 }
 
@@ -572,7 +578,7 @@ function spawnDurian(G) {
   var dr = { id: G.nextId++, x: Math.cos(t) * d, y: Math.sin(t) * d, born: G.tick, r: 24 };
   G.durians.push(dr);
   if (G.durians.length > 3) G.durians.shift();
-  G.ev.push({ t: 'durian_spawn', x: dr.x, y: dr.y });
+  pushEv(G, { t: 'durian_spawn', x: dr.x, y: dr.y });
   return dr;
 }
 
@@ -605,7 +611,7 @@ function useDurian(G, worm) {
       }
     }
   }
-  G.ev.push({ t: 'durian_fart', x: tx, y: ty, a: tailA, r: 500, affected: affected });
+  pushEv(G, { t: 'durian_fart', x: tx, y: ty, a: tailA, r: 500, affected: affected });
   return true;
 }
 
@@ -623,7 +629,7 @@ function step(G) {
       if (w.jumpTimer <= 0) {
         w.jumpTimer = 0;
         w.landImmune = 0.3;
-        G.ev.push({ t: 'jelly_land', x: w.x, y: w.y, id: w.id });
+        pushEv(G, { t: 'jelly_land', x: w.x, y: w.y, id: w.id });
       }
     } else if (w.landImmune > 0) {
       w.landImmune = Math.max(0, w.landImmune - dt);
@@ -701,15 +707,21 @@ function step(G) {
     spawnBanana(G);
   }
   /* 플레이어 바나나 획득 검사 */
-  if (G.player && G.player.alive && G.bananas && G.bananas.length) {
-    var pl = G.player;
-    for (i = G.bananas.length - 1; i >= 0; i--) {
-      var bn = G.bananas[i];
-      var bdx = pl.x - bn.x, bdy = pl.y - bn.y;
-      if (bdx * bdx + bdy * bdy < (pl.r + bn.r) * (pl.r + bn.r)) {
-        G.bananas.splice(i, 1);
-        if (pl.bananas < 3) pl.bananas++;
-        G.ev.push({ t: 'banana_pickup', x: pl.x, y: pl.y, count: pl.bananas });
+  /* 5-2) 바나나 스폰 (15초 = 900틱 마다 스폰) */
+  if (G.tick % 900 === 0) {
+    spawnBanana(G);
+  }
+  if (G.bananas && G.bananas.length) {
+    for (var wi = 0; wi < ws.length; wi++) {
+      var pl = ws[wi]; if (!pl.alive) continue;
+      for (i = G.bananas.length - 1; i >= 0; i--) {
+        var bn = G.bananas[i];
+        var bdx = pl.x - bn.x, bdy = pl.y - bn.y;
+        if (bdx * bdx + bdy * bdy < (pl.r + bn.r) * (pl.r + bn.r)) {
+          G.bananas.splice(i, 1);
+          if (pl.bananas < 3) pl.bananas++;
+          pushEv(G, { t: 'banana_pickup', x: pl.x, y: pl.y, count: pl.bananas, id: pl.id });
+        }
       }
     }
   }
@@ -717,16 +729,17 @@ function step(G) {
   if (G.tick % 1800 === 0) {
     spawnAppleJelly(G);
   }
-  /* 플레이어 사과젤리 획득 검사 (점프 중 공중에 있을 때는 미획득) */
-  if (G.player && G.player.alive && (!G.player.jumpTimer || G.player.jumpTimer <= 0) && G.appleJellies && G.appleJellies.length) {
-    var pl = G.player;
-    for (i = G.appleJellies.length - 1; i >= 0; i--) {
-      var aj = G.appleJellies[i];
-      var adx = pl.x - aj.x, ady = pl.y - aj.y;
-      if (adx * adx + ady * ady < (pl.r + aj.r) * (pl.r + aj.r)) {
-        G.appleJellies.splice(i, 1);
-        if (pl.appleJellies < 3) pl.appleJellies++;
-        G.ev.push({ t: 'jelly_pickup', x: pl.x, y: pl.y, count: pl.appleJellies });
+  if (G.appleJellies && G.appleJellies.length) {
+    for (var wi = 0; wi < ws.length; wi++) {
+      var pl = ws[wi]; if (!pl.alive || (pl.jumpTimer && pl.jumpTimer > 0)) continue;
+      for (i = G.appleJellies.length - 1; i >= 0; i--) {
+        var aj = G.appleJellies[i];
+        var adx = pl.x - aj.x, ady = pl.y - aj.y;
+        if (adx * adx + ady * ady < (pl.r + aj.r) * (pl.r + aj.r)) {
+          G.appleJellies.splice(i, 1);
+          if (pl.appleJellies < 3) pl.appleJellies++;
+          pushEv(G, { t: 'jelly_pickup', x: pl.x, y: pl.y, count: pl.appleJellies, id: pl.id });
+        }
       }
     }
   }
@@ -734,16 +747,17 @@ function step(G) {
   if (G.tick % 1800 === 0) {
     spawnDurian(G);
   }
-  /* 플레이어 두리안 획득 검사 */
-  if (G.player && G.player.alive && (!G.player.jumpTimer || G.player.jumpTimer <= 0) && G.durians && G.durians.length) {
-    var pl = G.player;
-    for (i = G.durians.length - 1; i >= 0; i--) {
-      var dr = G.durians[i];
-      var ddx = pl.x - dr.x, ddy = pl.y - dr.y;
-      if (ddx * ddx + ddy * ddy < (pl.r + dr.r) * (pl.r + dr.r)) {
-        G.durians.splice(i, 1);
-        if (pl.durians < 3) pl.durians++;
-        G.ev.push({ t: 'durian_pickup', x: pl.x, y: pl.y, count: pl.durians });
+  if (G.durians && G.durians.length) {
+    for (var wi = 0; wi < ws.length; wi++) {
+      var pl = ws[wi]; if (!pl.alive || (pl.jumpTimer && pl.jumpTimer > 0)) continue;
+      for (i = G.durians.length - 1; i >= 0; i--) {
+        var dr = G.durians[i];
+        var ddx = pl.x - dr.x, ddy = pl.y - dr.y;
+        if (ddx * ddx + ddy * ddy < (pl.r + dr.r) * (pl.r + dr.r)) {
+          G.durians.splice(i, 1);
+          if (pl.durians < 3) pl.durians++;
+          pushEv(G, { t: 'durian_pickup', x: pl.x, y: pl.y, count: pl.durians, id: pl.id });
+        }
       }
     }
   }
@@ -836,6 +850,9 @@ function serializeSnapshot(G) {
     }
   }
 
+  var evs = G.netEv ? G.netEv.slice() : [];
+  G.netEv = [];
+
   return {
     tick: G.tick,
     worms: ws,
@@ -843,7 +860,7 @@ function serializeSnapshot(G) {
     appleJellies: G.appleJellies || [],
     durians: G.durians || [],
     orbs: orbs,
-    ev: G.ev ? G.ev.slice() : []
+    ev: evs
   };
 }
 
@@ -892,7 +909,7 @@ function applySnapshot(G, s) {
     w.fartPoisonTimer = sw.fartPoisonTimer;
     w.bananas = sw.bananas; w.appleJellies = sw.appleJellies; w.durians = sw.durians;
     w.n = sw.n;
-    if (w.n > w.scap) shape(w);
+    if (!w.sx || sw.n + 2 > (w.scap || 0)) shape(w);
     if (sw.sx && sw.sy) {
       for (var idx = 0; idx < sw.n; idx++) {
         w.sx[idx] = sw.sx[idx];

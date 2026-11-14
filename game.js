@@ -370,6 +370,23 @@ function copyInviteLink(code) {
   }
 }
 
+function updateRoomBadge() {
+  if (!bRoom) return;
+  if (!Net || !Net.isOnline || !Net.roomCode) {
+    bRoom.style.display = 'none';
+    return;
+  }
+  bRoom.style.display = 'flex';
+  var cnt = 1;
+  if (G && G.worms && G.worms.length > 0) {
+    cnt = G.worms.filter(function (w) { return w.alive; }).length;
+  } else if (Net && Net.getPlayerCount) {
+    cnt = Net.getPlayerCount();
+  }
+  if (cnt < 1) cnt = 1;
+  bRoom.innerHTML = '🌐 <b>' + esc(Net.roomCode) + '</b> · ' + cnt + '명 <small style="opacity:0.85;margin-left:4px;">(초대 복사)</small>';
+}
+
 function triggerBanana() {
   if (Net && Net.isGuest) {
     if (G && G.player && G.player.alive && (G.player.bananas || 0) > 0) {
@@ -417,13 +434,13 @@ function startHostOnline(customCode) {
   Net.createRoom(customCode, {
     onOpen: function (code) {
       toast('👑 방 생성 완료! 코드: ' + code, 3500);
-      bRoom.style.display = 'flex';
-      bRoom.innerHTML = '🌐 <b>' + code + '</b> (초대 복사)';
+      updateRoomBadge();
       copyInviteLink(code);
     },
     onGuestJoin: function (peerId, name, skin) {
       var w = C.spawnGuestWorm(G, name, skin);
       toast('👋 「' + name + '」님이 참가했습니다!', 2000);
+      updateRoomBadge();
       return w.id;
     },
     onGuestInput: function (peerId, a, boost) {
@@ -444,7 +461,14 @@ function startHostOnline(customCode) {
       }
     },
     onGuestRespawn: function (peerId) {
-      var w = C.spawnGuestWorm(G, '참가자', 'grass');
+      var oldWId = Net.guestWorms[peerId];
+      var name = '참가자', skin = 'grass';
+      if (oldWId && G && G.byId[oldWId]) {
+        name = G.byId[oldWId].name;
+        skin = (G.byId[oldWId].skin && G.byId[oldWId].skin.id) || 'grass';
+      }
+      var w = C.spawnGuestWorm(G, name, skin);
+      updateRoomBadge();
       return w.id;
     },
     onGuestLeave: function (peerId, wId) {
@@ -452,19 +476,24 @@ function startHostOnline(customCode) {
         G.byId[wId].alive = false;
         toast('💨 참가자가 나갔습니다.', 1800);
       }
+      updateRoomBadge();
+    },
+    getInitialSnapshot: function () {
+      return G ? C.serializeSnapshot(G) : null;
     },
     onError: function (err) {
       toast('방 연결 오류: ' + (err.type || err.message || err), 3000);
     }
   });
 
-  var opt = { seed: (Math.random() * 1e9) | 0, bots: SV.bots, player: true, name: SV.nick || '방장', skin: SV.skin, quality: perf.q, limit: 0 };
+  var opt = { seed: (Math.random() * 1e9) | 0, bots: 0, player: true, name: SV.nick || '방장', skin: SV.skin, quality: perf.q, limit: 0 };
   G = C.newGame(opt);
   match = { mode: 'online', day: kstDay(), rule: null, real0: performance.now(), t0: G.tick, maxRank: 99, best: G.player.m, best0: SV.best, unl0: C.unlockedRec(rec(SV)), posted: false, kills: 0, lives: 1, killer: '', cause: '', end: '' };
   ptrs = {}; mouse.down = false; keys = {};
   cam.x = G.player.x; cam.y = G.player.y; cam.s = viewScale(G.player.r);
   perf.win = 0; perf.winN = 0; perf.slow = 0;
   hideUI(); setMode('play'); toTop(); acc = 0; last = performance.now();
+  updateRoomBadge();
 }
 
 function joinOnline(code) {
@@ -479,8 +508,7 @@ function joinOnline(code) {
 
   Net.joinRoom(code, SV.nick || '참가자', SV.skin, {
     onJoined: function (data) {
-      bRoom.style.display = 'flex';
-      bRoom.innerHTML = '🌐 <b>' + code.toUpperCase() + '</b> (초대 복사)';
+      updateRoomBadge();
       hideUI();
       setMode('play');
       toTop();
@@ -493,12 +521,16 @@ function joinOnline(code) {
         G.player = G.byId[Net.myWormId];
         if (mode !== 'play' && mode !== 'dying' && mode !== 'over') setMode('play');
       }
+      if (mode === 'play' || mode === 'dying') handleEvents(G);
+      updateRoomBadge();
     },
     onRespawned: function (newId) {
       Net.myWormId = newId;
       if (G && G.byId[newId]) G.player = G.byId[newId];
+      hideUI();
       setMode('play');
       toast('🌱 다시 태어났어요!', 1800);
+      updateRoomBadge();
     },
     onDisconnect: function (reason) {
       toast(reason || '방장과의 연결이 끊어졌습니다.', 3000);
@@ -531,8 +563,7 @@ function quickMatchOnline() {
     onJoined: function (data) {
       joined = true;
       clearTimeout(timer);
-      bRoom.style.display = 'flex';
-      bRoom.innerHTML = '🌐 <b>PUBLIC</b> (공개 방)';
+      updateRoomBadge();
       hideUI();
       setMode('play');
       toTop();
@@ -545,11 +576,15 @@ function quickMatchOnline() {
         G.player = G.byId[Net.myWormId];
         if (mode !== 'play' && mode !== 'dying' && mode !== 'over') setMode('play');
       }
+      if (mode === 'play' || mode === 'dying') handleEvents(G);
+      updateRoomBadge();
     },
     onRespawned: function (newId) {
       Net.myWormId = newId;
       if (G && G.byId[newId]) G.player = G.byId[newId];
+      hideUI();
       setMode('play');
+      updateRoomBadge();
     },
     onDisconnect: function () {
       bRoom.style.display = 'none';
@@ -613,8 +648,8 @@ function liveBest(m) {
   }
 }
 function endMatch() {
-  var p = G.player, md = match.mode, life = (G.tick - match.t0) * STEP, sc = Math.floor(match.best);
-  if (p.maxM > match.best) sc = Math.floor(match.best = p.maxM);
+  var p = G && G.player, md = match.mode, life = (G.tick - match.t0) * STEP, sc = Math.floor(match.best);
+  if (p && p.maxM > match.best) sc = Math.floor(match.best = p.maxM);
   match.end = G.done ? 'time' : 'dead'; match.life = life; match.score = sc;
   SV.games++; SV.kills += match.kills; if (match.kills > SV.bestKills) SV.bestKills = match.kills;
   var newBest = md === 'time' ? sc > SV.tbest : md === 'daily' ? (SV.dDay !== match.day || sc > SV.dBest) : sc > match.best0;
@@ -863,11 +898,9 @@ ui.addEventListener('click', function (e) {
       break;
     case 'online-respawn':
       if (Net && Net.isGuest) {
-        if (Net.hostConn && Net.hostConn.open) {
-          Net.hostConn.send({ t: 'respawn' });
-          hideUI();
-          setMode('play');
-        }
+        Net.requestRespawn();
+        hideUI();
+        setMode('play');
       } else if (Net && Net.isHost) {
         respawn();
         hideUI();
@@ -1038,10 +1071,12 @@ function handleEvents(g) {
     }
     if (e.t === 'durian_spawn') { if (G.player && G.player.alive) toast('🍈 두리안이 떨어졌어요! (지도 확인)', 1400); continue; }
     if (e.t === 'die') {
-      if (e.player) {
+      var isMe = e.player || (Net && Net.myWormId && e.id === Net.myWormId) || (G.player && e.id === G.player.id);
+      var byMe = e.byPlayer || (G.player && e.by === G.player.id) || (Net && Net.myWormId && e.by === Net.myWormId);
+      if (isMe) {
         match.killer = e.byName; match.cause = e.cause;
         SFX.die(); setMode('dying'); deathAt = rt; cam.follow = e.by || 0;
-      } else if (e.byPlayer) {
+      } else if (byMe) {
         match.kills++; SFX.kill(); toast('🎯 「' + e.name + '」을(를) 잡았어요! (길이 ' + fmt(e.m) + ')', 2000);
         if (match.kills === 5 && SV.bestKills < 5) setTimeout(function () { toast('🐯 한 판 5마리! 「호랑이」 무늬가 열려요', 2200); }, 2100);
       } else if (G.player && G.player.alive) {
@@ -1309,11 +1344,17 @@ function drawWorm(w, wx0, wy0, wx1, wy1) {
   X.globalAlpha = 1;
 }
 function hud(g) {
-  var p = g.player, rk = C.ranking(g), my = rk.indexOf(p) + 1, small = W < 420;
+  var p = g.player, rk = C.ranking(g), my = p ? rk.indexOf(p) + 1 : 0, small = W < 420;
   X.setTransform(DPR, 0, 0, DPR, 0, 0);
   X.textBaseline = 'alphabetic';
+  if (Net && Net.isOnline) {
+    X.textAlign = 'left';
+    X.font = '800 13px "Noto Sans KR",sans-serif';
+    X.fillStyle = '#66d9e8';
+    X.fillText('🌐 온라인 대전 (방: ' + Net.roomCode + ' · ' + Net.getPlayerCount() + '명)', 10, 52);
+  }
   /* 내 길이·순위 */
-  if (p.alive) {
+  if (p && p.alive) {
     X.textAlign = 'left';
     X.font = '900 ' + (small ? 22 : 26) + 'px "Noto Sans KR",sans-serif';
     X.fillStyle = 'rgba(0,0,0,.5)'; X.fillText('길이 ' + fmt(p.m), 11, 77);
@@ -1339,6 +1380,11 @@ function hud(g) {
     var dText = '🍈 ' + dcnt + '/3' + (dcnt > 0 ? (touchUI ? ' (두리안버튼 터치)' : ' [C키 방귀]') : ' (30초마다)');
     X.fillText(dText, 10, g.limit ? 188 : 144);
     if (my && my < match.maxRank) match.maxRank = my;
+  } else if (Net && Net.isOnline && (!p || !p.alive)) {
+    X.textAlign = 'center';
+    X.font = '700 15px "Noto Sans KR",sans-serif';
+    X.fillStyle = '#ffe066';
+    X.fillText('지렁이 준비 중…', W / 2, 70);
   }
   /* 남은 시간(시간 모드) — 위 가운데, 순위표와 겹치지 않게 왼쪽 글자 아래 */
   if (g.limit) {
@@ -1355,8 +1401,9 @@ function hud(g) {
   X.font = '900 12px "Noto Sans KR",sans-serif'; X.fillStyle = '#ffe066'; X.textAlign = 'left'; X.fillText('🏆 이번 판 순위', bx + 8, by + 16);
   X.font = '700 ' + (small ? 11 : 12) + 'px "Noto Sans KR",sans-serif';
   for (var i = 0; i < rows; i++) row(i + 1, rk[i], by + 22 + (i + 1) * lh - 3);
-  if (my > 10) row(my, p, by + 22 + 11 * lh - 3);
+  if (my > 10 && p) row(my, p, by + 22 + 11 * lh - 3);
   function row(n, w, y) {
+    if (!w) return;
     X.fillStyle = w === p ? '#ffe066' : 'rgba(255,255,255,.82)';
     X.textAlign = 'left'; var nm = w.name.length > 7 ? w.name.slice(0, 7) + '…' : w.name;
     X.fillText(n + '. ' + nm, bx + 8, y);
@@ -1411,7 +1458,7 @@ function hud(g) {
   }
 
   /* 내 지렁이 미니맵 표시 (따봉 이모지 👍) */
-  if (p.alive) {
+  if (p && p.alive) {
     var pmx = mx + p.x * ks, pmy = my2 + p.y * ks;
     var pPulse = 1 + 0.12 * Math.sin(rt * 6);
     var pSize = Math.round(14 * pPulse);
@@ -1423,7 +1470,7 @@ function hud(g) {
     X.fillText('👍', pmx, pmy);
   }
   /* 부스트 버튼 & 바나나 버튼·조이스틱 */
-  if (touchUI && p.alive && mode === 'play') {
+  if (touchUI && p && p.alive && mode === 'play') {
     var bb = boostBtn(), on = p.boosting, can = p.m >= C.MIN_BOOST;
     X.beginPath(); X.arc(bb.x, bb.y, bb.r, 0, TAU);
     X.fillStyle = on ? 'rgba(255,224,102,.55)' : can ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.06)'; X.fill();
@@ -1518,8 +1565,8 @@ function frame(now) {
     if (mode === 'play' && G && G.player && G.player.alive) { setBoostSound(G.player.boosting); liveBest(G.player.maxM); if (G.player.maxM > match.best) match.best = G.player.maxM; }
     if (mode === 'play' && G && G.done) { SFX.unlock(); endMatch(); }
     else if (mode === 'dying' && (G.done || rt - deathAt > 1.4)) {
-      if (Net && Net.isGuest) {
-        if (Net.hostConn && Net.hostConn.open) Net.hostConn.send({ t: 'respawn' });
+      if (Net && Net.isOnline) {
+        endMatch();
       } else if (C.MODES[match.mode].respawn && !G.done) {
         respawn();
       } else {

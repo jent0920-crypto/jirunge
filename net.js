@@ -73,10 +73,12 @@
             if (callbacks && callbacks.onGuestJoin) {
               var wId = callbacks.onGuestJoin(conn.peer, data.name, data.skin);
               self.guestWorms[conn.peer] = wId;
+              var initSnap = callbacks.getInitialSnapshot ? callbacks.getInitialSnapshot() : null;
               conn.send({
                 t: 'init',
                 roomCode: self.roomCode,
-                myId: wId
+                myId: wId,
+                s: initSnap
               });
             }
           } else if (data.t === 'input') {
@@ -91,7 +93,8 @@
             if (callbacks && callbacks.onGuestRespawn) {
               var newId = callbacks.onGuestRespawn(conn.peer);
               self.guestWorms[conn.peer] = newId;
-              conn.send({ t: 'respawned', myId: newId });
+              var respawnSnap = callbacks.getInitialSnapshot ? callbacks.getInitialSnapshot() : null;
+              conn.send({ t: 'respawned', myId: newId, s: respawnSnap });
             }
           }
         });
@@ -137,7 +140,7 @@
 
       this.peer.on('open', function () {
         var hostPeerId = PEER_PREFIX + self.roomCode;
-        var conn = self.peer.connect(hostPeerId, { reliable: false });
+        var conn = self.peer.connect(hostPeerId, { reliable: true });
         self.hostConn = conn;
 
         conn.on('open', function () {
@@ -152,11 +155,17 @@
           if (!data || !data.t) return;
           if (data.t === 'init') {
             self.myWormId = data.myId;
+            if (data.s && callbacks && callbacks.onSnapshot) {
+              callbacks.onSnapshot({ t: 'sync', s: data.s });
+            }
             if (callbacks && callbacks.onJoined) callbacks.onJoined(data);
           } else if (data.t === 'sync') {
             if (callbacks && callbacks.onSnapshot) callbacks.onSnapshot(data);
           } else if (data.t === 'respawned') {
             self.myWormId = data.myId;
+            if (data.s && callbacks && callbacks.onSnapshot) {
+              callbacks.onSnapshot({ t: 'sync', s: data.s });
+            }
             if (callbacks && callbacks.onRespawned) callbacks.onRespawned(data.myId);
           }
         });
@@ -213,11 +222,26 @@
       } catch (e) {}
     },
 
+    // 접속 인원 수 계산
+    getPlayerCount: function () {
+      var count = 1;
+      if (this.isHost && this.guestConns) {
+        for (var k in this.guestConns) {
+          if (this.guestConns[k] && this.guestConns[k].open) count++;
+        }
+      }
+      return count;
+    },
+
     // 초대 링크 복사
     getInviteUrl: function (code) {
       var c = code || this.roomCode;
       var url = window.location.origin + window.location.pathname + '?room=' + encodeURIComponent(c);
       return url;
+    },
+
+    leaveRoom: function () {
+      this.close();
     },
 
     close: function () {
