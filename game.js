@@ -36,14 +36,14 @@ var DPR_CAP = [2, 1.5, 1.25, 1];
 var SKEY = 'worm_v1';
 /* v:1 그대로 두고 칸만 더한다(예전 저장값은 그대로 읽힌다).
    mode = 고른 모드, tbest = 3분 타임어택 최고 길이, dDays = 오늘의 도전 참가한 날 수, dLast = 마지막 참가 날, dDay/dBest = 그날 최고 */
-function blank() { return { v: 1, best: 0, skin: 'sprout', ctrl: 'follow', bots: 20, mute: false, nick: '', games: 0, kills: 0, bestKills: 0, q: 0, mode: 'classic', tbest: 0, dDays: 0, dLast: '', dDay: '', dBest: 0 }; }
+function blank() { return { v: 1, best: 0, skin: 'sprout', ctrl: 'stick', bots: 20, mute: false, nick: '', games: 0, kills: 0, bestKills: 0, q: 0, mode: 'classic', tbest: 0, dDays: 0, dLast: '', dDay: '', dBest: 0 }; }
 function rec(d) { return { best: d.best, games: d.games, bestKills: d.bestKills, tbest: d.tbest, dDays: d.dDays }; }
 function load() {
   var d = blank();
   try { var j = JSON.parse(localStorage.getItem(SKEY) || 'null'); if (j && j.v === 1) for (var k in d) if (j[k] !== undefined && typeof j[k] === typeof d[k]) d[k] = j[k]; } catch (e) {}
   try { if (!d.nick) d.nick = localStorage.getItem('fs_nick') || ''; } catch (e) {}
   if ([15, 20, 25].indexOf(d.bots) < 0) d.bots = 20;
-  if (d.ctrl !== 'stick') d.ctrl = 'follow';
+  if (d.ctrl !== 'follow') d.ctrl = 'stick';
   if (!C.MODES[d.mode]) d.mode = 'classic';
   d.q = C.clamp(d.q | 0, 0, 2);
   if (C.unlockedRec(rec(d)).indexOf(d.skin) < 0) d.skin = 'sprout';
@@ -1034,6 +1034,10 @@ function boostBtn() {
   var rr = Math.max(28, Math.min(38, Math.min(W, H) * 0.085));
   return { x: W - rr - 18, y: H - rr - 18, r: rr };
 }
+function joystickPos() {
+  var jr = (W > H ? Math.min(48, Math.max(38, H * 0.125)) : Math.max(46, Math.min(60, Math.min(W, H) * 0.135)));
+  return { x: jr + 18, y: H - jr - 18, r: jr };
+}
 function bananaBtn() {
   var bb = boostBtn();
   var ir = Math.max(22, Math.min(30, bb.r * 0.82));
@@ -1057,9 +1061,14 @@ cv.addEventListener('pointerdown', function (e) {
   }
   if (mode !== 'play') return;
   var p = local(e);
-  if (e.pointerType === 'mouse') { mouse.x = p.x; mouse.y = p.y; mouse.has = true; mouse.down = true; return; }
+  var joy = joystickPos();
+  if (e.pointerType === 'mouse') {
+    mouse.x = p.x; mouse.y = p.y; mouse.has = true; mouse.down = true;
+    mouse.onJoy = (Math.hypot(p.x - joy.x, p.y - joy.y) < joy.r * 1.5);
+    return;
+  }
   touchUI = true;
-  var bb = boostBtn(), bnb = bananaBtn(), ajb = appleJellyBtn(), drb = durianBtn(), hasSteer = false;
+  var bb = boostBtn(), bnb = bananaBtn(), ajb = appleJellyBtn(), drb = durianBtn();
   if (Math.hypot(p.x - drb.x, p.y - drb.y) < drb.r + 14) {
     if (triggerDurian()) {
       e.preventDefault();
@@ -1078,23 +1087,37 @@ cv.addEventListener('pointerdown', function (e) {
       return;
     }
   }
+  if (Math.hypot(p.x - bb.x, p.y - bb.y) < bb.r + 20) {
+    ptrs[e.pointerId] = { role: 'boost', x: p.x, y: p.y };
+    try { cv.setPointerCapture(e.pointerId); } catch (er) {}
+    e.preventDefault();
+    return;
+  }
+  var hasSteer = false;
   for (var k in ptrs) if (ptrs[k].role === 'steer') hasSteer = true;
-  var role = (Math.hypot(p.x - bb.x, p.y - bb.y) < bb.r + 16 || hasSteer) ? 'boost' : 'steer';
-  ptrs[e.pointerId] = { role: role, x: p.x, y: p.y, bx: p.x, by: p.y };
+  var distToJoy = Math.hypot(p.x - joy.x, p.y - joy.y);
+  var role = (!hasSteer && (distToJoy < joy.r * 2.2 || p.x < W * 0.55)) ? 'steer' : (hasSteer ? 'boost' : 'steer');
+  ptrs[e.pointerId] = { role: role, x: p.x, y: p.y, bx: joy.x, by: joy.y, isJoy: (role === 'steer') };
   try { cv.setPointerCapture(e.pointerId); } catch (er) {}
   e.preventDefault();
 });
 cv.addEventListener('pointermove', function (e) {
   var p = local(e);
-  if (e.pointerType === 'mouse') { mouse.x = p.x; mouse.y = p.y; mouse.has = true; lastSteer = 1; return; }
+  if (e.pointerType === 'mouse') {
+    mouse.x = p.x; mouse.y = p.y; mouse.has = true; lastSteer = 1;
+    var joy = joystickPos();
+    if (mouse.down && Math.hypot(p.x - joy.x, p.y - joy.y) < joy.r * 1.8) {
+      mouse.onJoy = true;
+    }
+    return;
+  }
   var q = ptrs[e.pointerId]; if (!q) return;
   q.x = p.x; q.y = p.y;
-  if (q.role === 'steer' && SV.ctrl === 'stick') {
-    var dx = q.x - q.bx, dy = q.y - q.by, d = Math.hypot(dx, dy), R = 56;
-    if (d > R) { q.bx = q.x - dx / d * R; q.by = q.y - dy / d * R; }
-  }
 });
-function ptrEnd(e) { if (e.pointerType === 'mouse') { mouse.down = false; return; } delete ptrs[e.pointerId]; }
+function ptrEnd(e) {
+  if (e.pointerType === 'mouse') { mouse.down = false; mouse.onJoy = false; return; }
+  delete ptrs[e.pointerId];
+}
 cv.addEventListener('pointerup', ptrEnd);
 cv.addEventListener('pointercancel', ptrEnd);
 cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -1195,16 +1218,29 @@ function applyInput() {
   var inp = G.input, steerP = null, boost = false, k;
   for (k in ptrs) { var q = ptrs[k]; if (q.role === 'steer') steerP = q; else boost = true; }
   var cx = W / 2, cy = H / 2;
+  var joy = joystickPos();
+
   if (keys.arrowleft || keys.a) inp.a = C.wrapA(inp.a - 3.4 * STEP);
   else if (keys.arrowright || keys.d) inp.a = C.wrapA(inp.a + 3.4 * STEP);
   else if (steerP) {
-    if (SV.ctrl === 'stick') { var dx = steerP.x - steerP.bx, dy = steerP.y - steerP.by; if (dx * dx + dy * dy > 64) inp.a = Math.atan2(dy, dx); }
-    else { var fx = steerP.x - cx, fy = steerP.y - cy; if (fx * fx + fy * fy > 100) inp.a = Math.atan2(fy, fx); }
+    if (steerP.isJoy || SV.ctrl === 'stick' || steerP.x < W * 0.6) {
+      var dx = steerP.x - joy.x, dy = steerP.y - joy.y;
+      if (dx * dx + dy * dy > 36) inp.a = Math.atan2(dy, dx);
+    } else {
+      var fx = steerP.x - cx, fy = steerP.y - cy;
+      if (fx * fx + fy * fy > 100) inp.a = Math.atan2(fy, fx);
+    }
   } else if (mouse.has && lastSteer === 1) {
-    var mx = mouse.x - cx, my = mouse.y - cy; if (mx * mx + my * my > 36) inp.a = Math.atan2(my, mx);
+    if (mouse.down && mouse.onJoy) {
+      var dx = mouse.x - joy.x, dy = mouse.y - joy.y;
+      if (dx * dx + dy * dy > 36) inp.a = Math.atan2(dy, dx);
+    } else {
+      var mx = mouse.x - cx, my = mouse.y - cy;
+      if (mx * mx + my * my > 36) inp.a = Math.atan2(my, mx);
+    }
   }
   var spaceBoost = keys[' '] && (!G.player || (G.player.appleJellies || 0) <= 0 || (G.player.jumpTimer || 0) > 0);
-  if (mouse.down || spaceBoost || keys.arrowup || keys.w) boost = true;
+  if ((mouse.down && !mouse.onJoy) || spaceBoost || (keys.arrowup && !keys.arrowleft && !keys.arrowright) || keys.w) boost = true;
   inp.boost = boost;
   if (Net && Net.isGuest) {
     Net.sendInput(inp.a, inp.boost);
@@ -1656,9 +1692,13 @@ function hud(g) {
     X.fillText(n + '. ' + nm, bx + 8, y);
     X.textAlign = 'right'; X.fillText(fmt(w.m), bx + bw - 8, y);
   }
-  /* 지도 */
-  var mr = Math.max(38, Math.min(56, Math.min(W, H) * 0.12)), mx = mr + 14, my2 = H - mr - 14, A = C.ARENA, ks = mr / A;
-  X.beginPath(); X.arc(mx, my2, mr, 0, TAU); X.fillStyle = 'rgba(0,0,0,.42)'; X.fill(); X.lineWidth = 2; X.strokeStyle = 'rgba(255,90,90,.6)'; X.stroke();
+  /* 지도 — 왼쪽 상단 아이템(바나나, 사과, 두리안) 바로 아래로 배치 (세로, 가로모드 동일) */
+  var mr = (W > H ? Math.min(36, Math.max(30, H * 0.095)) : Math.max(34, Math.min(46, Math.min(W, H) * 0.11)));
+  var mx = mr + 12;
+  var itemsBottomY = (p && p.alive) ? ((g.limit ? 188 : 144) + 12) : 70;
+  var my2 = itemsBottomY + mr + 8;
+  var A = C.ARENA, ks = mr / A;
+  X.beginPath(); X.arc(mx, my2, mr, 0, TAU); X.fillStyle = 'rgba(0,0,0,.45)'; X.fill(); X.lineWidth = 2; X.strokeStyle = 'rgba(255,90,90,.6)'; X.stroke();
   X.textAlign = 'center';
   X.textBaseline = 'middle';
 
@@ -1827,11 +1867,131 @@ function hud(g) {
       X.fillStyle = '#1b3005'; X.fillText(p.durians, drb.x + drb.r * 0.6, drb.y - drb.r * 0.6);
     }
     X.textBaseline = 'alphabetic';
-    if (SV.ctrl === 'stick') for (var k in ptrs) {
-      var q = ptrs[k]; if (q.role !== 'steer') continue;
-      X.beginPath(); X.arc(q.bx, q.by, 56, 0, TAU); X.fillStyle = 'rgba(255,255,255,.08)'; X.fill(); X.lineWidth = 2; X.strokeStyle = 'rgba(255,255,255,.3)'; X.stroke();
-      X.beginPath(); X.arc(q.x, q.y, 24, 0, TAU); X.fillStyle = 'rgba(255,255,255,.3)'; X.fill();
+  }
+
+  /* ── 좌측 하단 상하좌우 조이스틱 ── */
+  var showJoystick = (touchUI || window.innerWidth <= 1024 || SV.ctrl === 'stick');
+  if (showJoystick && p && p.alive && mode === 'play') {
+    var joy = joystickPos();
+    var jx = joy.x, jy = joy.y, jr = joy.r;
+
+    var steerTouch = null;
+    for (var k in ptrs) {
+      if (ptrs[k].role === 'steer') {
+        steerTouch = ptrs[k];
+        break;
+      }
     }
+    if (!steerTouch && mouse.down && mouse.onJoy) {
+      steerTouch = { x: mouse.x, y: mouse.y };
+    }
+
+    var knobX = jx, knobY = jy;
+    var isJoyActive = false;
+    var activeA = null;
+
+    if (steerTouch) {
+      var dx = steerTouch.x - jx, dy = steerTouch.y - jy;
+      var d = Math.hypot(dx, dy);
+      var maxD = jr * 0.72;
+      if (d > 5) {
+        isJoyActive = true;
+        activeA = Math.atan2(dy, dx);
+        var clampedD = Math.min(d, maxD);
+        knobX = jx + (dx / d) * clampedD;
+        knobY = jy + (dy / d) * clampedD;
+      }
+    } else if (p && p.alive && (keys.arrowleft || keys.arrowright || keys.arrowup || keys.arrowdown || keys.a || keys.d || keys.w || keys.s)) {
+      var curA = G.input.a;
+      isJoyActive = true;
+      activeA = curA;
+      knobX = jx + Math.cos(curA) * (jr * 0.45);
+      knobY = jy + Math.sin(curA) * (jr * 0.45);
+    }
+
+    var isRightActive = false, isDownActive = false, isLeftActive = false, isUpActive = false;
+    if (isJoyActive && activeA !== null) {
+      isRightActive = (activeA >= -Math.PI / 4 && activeA <= Math.PI / 4);
+      isDownActive = (activeA > Math.PI / 4 && activeA < 3 * Math.PI / 4);
+      isUpActive = (activeA < -Math.PI / 4 && activeA > -3 * Math.PI / 4);
+      isLeftActive = (activeA >= 3 * Math.PI / 4 || activeA <= -3 * Math.PI / 4);
+    }
+
+    X.save();
+
+    // 1. 조이스틱 베이스 외곽 원
+    X.beginPath();
+    X.arc(jx, jy, jr, 0, TAU);
+    X.fillStyle = 'rgba(12, 23, 18, 0.58)';
+    X.fill();
+    X.lineWidth = 2.5;
+    X.strokeStyle = isJoyActive ? 'rgba(255, 224, 102, 0.75)' : 'rgba(255, 255, 255, 0.3)';
+    X.stroke();
+
+    // 2. 내부 안내 원 & 십자 가이드라인
+    X.beginPath();
+    X.arc(jx, jy, jr * 0.52, 0, TAU);
+    X.lineWidth = 1.5;
+    X.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    X.stroke();
+
+    X.beginPath();
+    X.moveTo(jx - jr * 0.85, jy); X.lineTo(jx + jr * 0.85, jy);
+    X.moveTo(jx, jy - jr * 0.85); X.lineTo(jx, jy + jr * 0.85);
+    X.lineWidth = 1;
+    X.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    X.stroke();
+
+    // 3. 상하좌우 (▲ ▼ ◀ ▶) 방향 화살표
+    var arrowD = jr * 0.72;
+    var arrowSz = Math.round(jr * 0.28);
+    X.font = '900 ' + arrowSz + 'px sans-serif';
+    X.textAlign = 'center';
+    X.textBaseline = 'middle';
+
+    // ▲ 상
+    X.fillStyle = isUpActive ? '#ffe066' : 'rgba(255, 255, 255, 0.45)';
+    X.fillText('▲', jx, jy - arrowD);
+
+    // ▼ 하
+    X.fillStyle = isDownActive ? '#ffe066' : 'rgba(255, 255, 255, 0.45)';
+    X.fillText('▼', jx, jy + arrowD);
+
+    // ◀ 좌
+    X.fillStyle = isLeftActive ? '#ffe066' : 'rgba(255, 255, 255, 0.45)';
+    X.fillText('◀', jx - arrowD, jy);
+
+    // ▶ 우
+    X.fillStyle = isRightActive ? '#ffe066' : 'rgba(255, 255, 255, 0.45)';
+    X.fillText('▶', jx + arrowD, jy);
+
+    // 4. 스틱 줄기 연결선
+    if (isJoyActive && (knobX !== jx || knobY !== jy)) {
+      X.beginPath();
+      X.moveTo(jx, jy);
+      X.lineTo(knobX, knobY);
+      X.lineWidth = 4;
+      X.strokeStyle = 'rgba(255, 224, 102, 0.5)';
+      X.stroke();
+    }
+
+    // 5. 조이스틱 조작 노브 (손잡이)
+    var knobR = jr * 0.38;
+    X.beginPath();
+    X.arc(knobX, knobY, knobR, 0, TAU);
+    X.fillStyle = isJoyActive ? 'rgba(255, 224, 102, 0.65)' : 'rgba(255, 255, 255, 0.32)';
+    X.fill();
+    X.lineWidth = 2.5;
+    X.strokeStyle = isJoyActive ? '#ffe066' : 'rgba(255, 255, 255, 0.85)';
+    X.stroke();
+
+    // 노브 중앙 도트
+    X.beginPath();
+    X.arc(knobX, knobY, knobR * 0.32, 0, TAU);
+    X.fillStyle = isJoyActive ? '#ffe066' : 'rgba(255, 255, 255, 0.65)';
+    X.fill();
+
+    X.restore();
   }
 }
 function roundRect(x, y, w, h, r) { X.beginPath(); X.moveTo(x + r, y); X.arcTo(x + w, y, x + w, y + h, r); X.arcTo(x + w, y + h, x, y + h, r); X.arcTo(x, y + h, x, y, r); X.arcTo(x, y, x + w, y, r); X.closePath(); }
