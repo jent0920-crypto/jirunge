@@ -23,6 +23,8 @@
     hostConn: null,
     guestConns: {}, // peerId -> DataConnection
     guestWorms: {}, // peerId -> wormId
+    guestNicks: {}, // peerId -> nickname
+    guestSkins: {}, // peerId -> skinId
     lastBroadcast: 0,
     onStateUpdate: null,
     onGuestJoin: null,
@@ -45,6 +47,8 @@
       this.roomCode = (code || this.genRoomCode()).toUpperCase();
       this.guestConns = {};
       this.guestWorms = {};
+      this.guestNicks = {};
+      this.guestSkins = {};
 
       var self = this;
       var peerId = PEER_PREFIX + this.roomCode;
@@ -70,6 +74,8 @@
         conn.on('data', function (data) {
           if (!data || !data.t) return;
           if (data.t === 'join') {
+            self.guestNicks[conn.peer] = data.name || '참가자';
+            self.guestSkins[conn.peer] = data.skin || 'grass';
             if (callbacks && callbacks.onGuestJoin) {
               var wId = callbacks.onGuestJoin(conn.peer, data.name, data.skin);
               self.guestWorms[conn.peer] = wId;
@@ -90,6 +96,8 @@
               callbacks.onGuestSkill(conn.peer, data.skill);
             }
           } else if (data.t === 'respawn') {
+            if (data.name) self.guestNicks[conn.peer] = data.name;
+            if (data.skin) self.guestSkins[conn.peer] = data.skin;
             if (callbacks && callbacks.onGuestRespawn) {
               var newId = callbacks.onGuestRespawn(conn.peer, data.name, data.skin);
               self.guestWorms[conn.peer] = newId;
@@ -104,6 +112,8 @@
           var wId = self.guestWorms[conn.peer];
           delete self.guestConns[conn.peer];
           delete self.guestWorms[conn.peer];
+          delete self.guestNicks[conn.peer];
+          delete self.guestSkins[conn.peer];
           if (callbacks && callbacks.onGuestLeave) callbacks.onGuestLeave(conn.peer, wId);
         });
 
@@ -260,6 +270,8 @@
       }
       this.guestConns = {};
       this.guestWorms = {};
+      this.guestNicks = {};
+      this.guestSkins = {};
       if (this.peer) {
         try { this.peer.destroy(); } catch (e) {}
         this.peer = null;

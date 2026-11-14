@@ -528,6 +528,11 @@ function joinOnline(code) {
           deathAt = 0;
           match.killer = '';
           match.cause = '';
+          ptrs = {};
+          mouse.down = false;
+          keys = {};
+          last = performance.now();
+          acc = 0;
           if (mode !== 'play') {
             hideUI();
             setMode('play');
@@ -610,6 +615,11 @@ function quickMatchOnline() {
           deathAt = 0;
           match.killer = '';
           match.cause = '';
+          ptrs = {};
+          mouse.down = false;
+          keys = {};
+          last = performance.now();
+          acc = 0;
           if (mode !== 'play') {
             hideUI();
             setMode('play');
@@ -700,6 +710,23 @@ function respawn() {
   acc = 0;
   setMode('play');
   if (Net && Net.isHost && G) {
+    if (Net.guestConns) {
+      for (var peerId in Net.guestConns) {
+        var conn = Net.guestConns[peerId];
+        if (!conn || !conn.open) continue;
+        var oldWId = Net.guestWorms[peerId];
+        var gw = (oldWId && G.byId[oldWId]) ? G.byId[oldWId] : null;
+        if (!gw || !gw.alive) {
+          var gName = (gw && gw.name) || (Net.guestNicks && Net.guestNicks[peerId]) || '참가자';
+          var gSkin = (gw && gw.skin && gw.skin.id) || (Net.guestSkins && Net.guestSkins[peerId]) || 'grass';
+          var newWorm = C.spawnGuestWorm(G, gName, gSkin);
+          Net.guestWorms[peerId] = newWorm.id;
+          try {
+            conn.send({ t: 'respawned', myId: newWorm.id, s: C.serializeSnapshot(G) });
+          } catch (e) {}
+        }
+      }
+    }
     Net.broadcastSnapshot(C.serializeSnapshot(G));
   }
   toast(G.limit ? '🌱 다시 태어났어요! 남은 시간 ' + fmtT(G.limit - G.tick * STEP) : '🌱 다시 태어났어요!', 1800);
@@ -1323,7 +1350,12 @@ function render(g, dt) {
   if (!g) return;
   var p = g.player, tx = cam.x, ty = cam.y, tr = 12;
   if (p && p.alive) { tx = p.x; ty = p.y; tr = p.r; }
-  else if (g === G && cam.follow && g.byId[cam.follow]) { var kw = g.byId[cam.follow]; tx = kw.x; ty = kw.y; tr = kw.r; }
+  else if (g === G && cam.follow && g.byId[cam.follow] && g.byId[cam.follow].alive) { var kw = g.byId[cam.follow]; tx = kw.x; ty = kw.y; tr = kw.r; }
+  else if (g === G && g.worms && g.worms.length > 0) {
+    for (var ai = 0; ai < g.worms.length; ai++) {
+      if (g.worms[ai].alive) { tx = g.worms[ai].x; ty = g.worms[ai].y; tr = g.worms[ai].r; break; }
+    }
+  }
   else if (g === BG) { var top = g.worms[0]; for (var i = 1; i < g.worms.length; i++) if (g.worms[i].m > top.m) top = g.worms[i]; if (top) { if (cam.follow !== top.id) cam.follow = top.id; var tw = g.byId[cam.follow]; if (tw) { tx = tw.x; ty = tw.y; tr = tw.r; } } }
   if (p && p.alive && mode !== 'dying') { cam.x = tx; cam.y = ty; }
   else { var kk = Math.min(1, dt * 2.2); cam.x += (tx - cam.x) * kk; cam.y += (ty - cam.y) * kk; }
