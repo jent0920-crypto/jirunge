@@ -38,7 +38,7 @@ Vercel에 연동하여 바로 무료 호스팅할 수 있도록 정적 호스팅
    - GitHub 계정으로 Vercel에 로그인합니다.
 2. **새 프로젝트 추가 (Add New Project)**:
    - Dashboard에서 **"Add New..."** → **"Project"** 클릭.
-   - 연동된 GitHub 리포지토리 목록에서 **`jirunge`** (또는 `ju96015140-png/jirunge`)를 찾아 **"Import"** 클릭.
+   - 연동된 GitHub 리포지토리 목록에서 **`jirunge`** (또는 `jent0920-crypto/jirunge`)를 찾아 **"Import"** 클릭.
 3. **배포 (Deploy)**:
    - Build & Output Settings 등 모든 설정은 기본값(정적 웹사이트) 그대로 두고 **"Deploy"** 버튼 클릭!
 4. **완료!**:
