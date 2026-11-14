@@ -91,10 +91,11 @@
             }
           } else if (data.t === 'respawn') {
             if (callbacks && callbacks.onGuestRespawn) {
-              var newId = callbacks.onGuestRespawn(conn.peer);
+              var newId = callbacks.onGuestRespawn(conn.peer, data.name, data.skin);
               self.guestWorms[conn.peer] = newId;
               var respawnSnap = callbacks.getInitialSnapshot ? callbacks.getInitialSnapshot() : null;
               conn.send({ t: 'respawned', myId: newId, s: respawnSnap });
+              if (respawnSnap) self.broadcastSnapshot(respawnSnap);
             }
           }
         });
@@ -215,10 +216,10 @@
     },
 
     // 게스트가 부활 요청 전송
-    requestRespawn: function () {
+    requestRespawn: function (name, skin) {
       if (!this.isGuest || !this.hostConn || !this.hostConn.open) return;
       try {
-        this.hostConn.send({ t: 'respawn' });
+        this.hostConn.send({ t: 'respawn', name: name, skin: skin });
       } catch (e) {}
     },
 

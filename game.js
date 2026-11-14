@@ -460,14 +460,14 @@ function startHostOnline(customCode) {
         else if (skill === 'durian') C.useDurian(G, w);
       }
     },
-    onGuestRespawn: function (peerId) {
+    onGuestRespawn: function (peerId, name, skin) {
+      var nick = name || '참가자', sk = skin || 'grass';
       var oldWId = Net.guestWorms[peerId];
-      var name = '참가자', skin = 'grass';
-      if (oldWId && G && G.byId[oldWId]) {
-        name = G.byId[oldWId].name;
-        skin = (G.byId[oldWId].skin && G.byId[oldWId].skin.id) || 'grass';
+      if (!name && oldWId && G && G.byId[oldWId]) {
+        nick = G.byId[oldWId].name;
+        sk = (G.byId[oldWId].skin && G.byId[oldWId].skin.id) || 'grass';
       }
-      var w = C.spawnGuestWorm(G, name, skin);
+      var w = C.spawnGuestWorm(G, nick, sk);
       updateRoomBadge();
       return w.id;
     },
@@ -518,15 +518,42 @@ function joinOnline(code) {
       if (!G) G = C.newGame({ bots: 0, player: false });
       C.applySnapshot(G, data.s);
       if (Net.myWormId && G.byId[Net.myWormId]) {
+        var prevAlive = G.player ? G.player.alive : false;
         G.player = G.byId[Net.myWormId];
-        if (mode !== 'play' && mode !== 'dying' && mode !== 'over') setMode('play');
+        if (!prevAlive && G.player.alive) {
+          cam.follow = 0;
+          cam.x = G.player.x;
+          cam.y = G.player.y;
+          cam.s = viewScale(G.player.r);
+          deathAt = 0;
+          match.killer = '';
+          match.cause = '';
+          if (mode !== 'play') {
+            hideUI();
+            setMode('play');
+          }
+        }
       }
       if (mode === 'play' || mode === 'dying') handleEvents(G);
       updateRoomBadge();
     },
     onRespawned: function (newId) {
       Net.myWormId = newId;
-      if (G && G.byId[newId]) G.player = G.byId[newId];
+      if (G && G.byId[newId]) {
+        G.player = G.byId[newId];
+        cam.follow = 0;
+        cam.x = G.player.x;
+        cam.y = G.player.y;
+        cam.s = viewScale(G.player.r);
+      }
+      match.killer = '';
+      match.cause = '';
+      deathAt = 0;
+      ptrs = {};
+      mouse.down = false;
+      keys = {};
+      last = performance.now();
+      acc = 0;
       hideUI();
       setMode('play');
       toast('🌱 다시 태어났어요!', 1800);
@@ -573,17 +600,45 @@ function quickMatchOnline() {
       if (!G) G = C.newGame({ bots: 0, player: false });
       C.applySnapshot(G, data.s);
       if (Net.myWormId && G.byId[Net.myWormId]) {
+        var prevAlive = G.player ? G.player.alive : false;
         G.player = G.byId[Net.myWormId];
-        if (mode !== 'play' && mode !== 'dying' && mode !== 'over') setMode('play');
+        if (!prevAlive && G.player.alive) {
+          cam.follow = 0;
+          cam.x = G.player.x;
+          cam.y = G.player.y;
+          cam.s = viewScale(G.player.r);
+          deathAt = 0;
+          match.killer = '';
+          match.cause = '';
+          if (mode !== 'play') {
+            hideUI();
+            setMode('play');
+          }
+        }
       }
       if (mode === 'play' || mode === 'dying') handleEvents(G);
       updateRoomBadge();
     },
     onRespawned: function (newId) {
       Net.myWormId = newId;
-      if (G && G.byId[newId]) G.player = G.byId[newId];
+      if (G && G.byId[newId]) {
+        G.player = G.byId[newId];
+        cam.follow = 0;
+        cam.x = G.player.x;
+        cam.y = G.player.y;
+        cam.s = viewScale(G.player.r);
+      }
+      match.killer = '';
+      match.cause = '';
+      deathAt = 0;
+      ptrs = {};
+      mouse.down = false;
+      keys = {};
+      last = performance.now();
+      acc = 0;
       hideUI();
       setMode('play');
+      toast('🌱 다시 태어났어요!', 1800);
       updateRoomBadge();
     },
     onDisconnect: function () {
@@ -628,12 +683,54 @@ function start() {
 }
 /* 3분 타임어택: 터지면 잠깐 뒤 새 지렁이로 다시(이번 판 최대 길이는 그대로) */
 function respawn() {
-  C.respawnPlayer(G, SV.nick || '나', C.skinById(SV.skin));
-  match.lives++; cam.follow = 0;
-  cam.x = G.player.x; cam.y = G.player.y;
-  ptrs = {}; mouse.down = false;
+  var nick = SV.nick || (Net && Net.isOnline ? '방장' : '나');
+  C.respawnPlayer(G, nick, C.skinById(SV.skin));
+  match.lives++;
+  match.killer = '';
+  match.cause = '';
+  deathAt = 0;
+  cam.follow = 0;
+  cam.x = G.player.x;
+  cam.y = G.player.y;
+  cam.s = viewScale(G.player.r);
+  ptrs = {};
+  mouse.down = false;
+  keys = {};
+  last = performance.now();
+  acc = 0;
   setMode('play');
-  toast('🌱 다시 태어났어요! 남은 시간 ' + fmtT(G.limit - G.tick * STEP), 1800);
+  if (Net && Net.isHost && G) {
+    Net.broadcastSnapshot(C.serializeSnapshot(G));
+  }
+  toast(G.limit ? '🌱 다시 태어났어요! 남은 시간 ' + fmtT(G.limit - G.tick * STEP) : '🌱 다시 태어났어요!', 1800);
+}
+
+function onlineRespawn() {
+  audio();
+  if (Net && Net.isOnline) {
+    if (Net.isHost) {
+      respawn();
+      hideUI();
+    } else if (Net.isGuest) {
+      match.lives++;
+      match.killer = '';
+      match.cause = '';
+      deathAt = 0;
+      cam.follow = 0;
+      ptrs = {};
+      mouse.down = false;
+      keys = {};
+      last = performance.now();
+      acc = 0;
+      hideUI();
+      setMode('play');
+      Net.requestRespawn(SV.nick || '참가자', SV.skin);
+      toast('🌱 부활하는 중…', 1500);
+    }
+  } else {
+    respawn();
+    hideUI();
+  }
 }
 function liveBest(m) {
   /* 판 도중에도 최고 기록을 넘으면 바로 무늬를 연다 */
@@ -881,7 +978,9 @@ ui.addEventListener('click', function (e) {
   audio(); if (a !== 'start') SFX.tick();
   switch (a) {
     case 'start':
-      if (SV.mode === 'online') {
+      if (Net && Net.isOnline) {
+        onlineRespawn();
+      } else if (SV.mode === 'online') {
         var cInp = (document.getElementById('wm-room-input') || {}).value;
         if (cInp && cInp.trim()) joinOnline(cInp.trim());
         else startHostOnline();
@@ -897,14 +996,7 @@ ui.addEventListener('click', function (e) {
       else toast('방 코드를 입력해주세요!');
       break;
     case 'online-respawn':
-      if (Net && Net.isGuest) {
-        Net.requestRespawn();
-        hideUI();
-        setMode('play');
-      } else if (Net && Net.isHost) {
-        respawn();
-        hideUI();
-      }
+      onlineRespawn();
       break;
     case 'online-share':
       copyInviteLink(Net && Net.roomCode);
@@ -959,6 +1051,10 @@ function durianBtn() {
 }
 cv.addEventListener('pointerdown', function (e) {
   audio();
+  if (mode === 'over' && Net && Net.isOnline) {
+    onlineRespawn();
+    return;
+  }
   if (mode !== 'play') return;
   var p = local(e);
   if (e.pointerType === 'mouse') { mouse.x = p.x; mouse.y = p.y; mouse.has = true; mouse.down = true; return; }
@@ -1010,7 +1106,12 @@ document.addEventListener('keydown', function (e) {
   if (k === 'm' || k === 'M') { audio(); setMute(!SV.mute); return; }
   if (k === 'p' || k === 'P' || k === 'Escape') { if (mode === 'pause') { e.preventDefault(); resume(); } else if (mode === 'play') { e.preventDefault(); pause(); } return; }
   if (mode === 'title' && k === 'Enter') { e.preventDefault(); start(); return; }
-  if (mode === 'over' && k === 'Enter') { e.preventDefault(); start(); return; }
+  if (mode === 'over' && (k === 'Enter' || k === ' ')) {
+    e.preventDefault();
+    if (Net && Net.isOnline) onlineRespawn();
+    else start();
+    return;
+  }
   if (mode !== 'play') return;
   if (k === ' ' && G && G.player && G.player.alive && G.player.appleJellies > 0 && G.player.jumpTimer <= 0) {
     if (triggerAppleJelly()) { e.preventDefault(); return; }
@@ -1149,8 +1250,19 @@ function handleEvents(g) {
     }
     if (e.t === 'durian_spawn') { if (G.player && G.player.alive) toast('🍈 두리안이 떨어졌어요! (지도 확인)', 1400); continue; }
     if (e.t === 'die') {
-      var isMe = e.player || (Net && Net.myWormId && e.id === Net.myWormId) || (G.player && e.id === G.player.id);
-      var byMe = e.byPlayer || (G.player && e.by === G.player.id) || (Net && Net.myWormId && e.by === Net.myWormId);
+      var isMe = false, byMe = false;
+      if (Net && Net.isOnline) {
+        if (Net.isGuest) {
+          isMe = !!(Net.myWormId && e.id === Net.myWormId);
+          byMe = !!(Net.myWormId && e.by === Net.myWormId);
+        } else if (Net.isHost) {
+          isMe = !!(G.player && e.id === G.player.id);
+          byMe = !!(G.player && e.by === G.player.id);
+        }
+      } else {
+        isMe = !!e.player;
+        byMe = !!e.byPlayer;
+      }
       if (isMe) {
         match.killer = e.byName; match.cause = e.cause;
         SFX.die(); setMode('dying'); deathAt = rt; cam.follow = e.by || 0;
